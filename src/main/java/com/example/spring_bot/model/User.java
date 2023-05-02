@@ -6,6 +6,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.HashMap;
+
 @Getter
 @Setter
 @Entity(name = "usersDataTable")
@@ -24,7 +27,6 @@ public class User {
 
     private boolean bIsSeller;
 
-    private double balance;
 
     public Long getChatId() {
         return chatId;

@@ -4,6 +4,7 @@ import com.example.spring_bot.config.BotConfig;
 import com.example.spring_bot.model.*;
 import com.vdurmont.emoji.EmojiParser;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
@@ -24,15 +25,20 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import java.io.File;
 import java.io.IOException;
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import com.example.spring_bot.model.User;
 import com.example.spring_bot.model.UserRepository;
 
-
+enum Pages{
+    MAIN,
+    MARKETPLACE,
+    PROFILE,
+    PROFILE_CURRENCY_TOP,
+    PROFILE_CURRENCY_WITHDRAW,
+    CALCULATOR_CURRENCY,
+    GRAPHS_CURRENCY
+}
 @Component
 public class TelegramBot extends TelegramLongPollingBot {
 
@@ -44,6 +50,10 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     @Autowired
     private AdsRepository adsRepository;
+
+    @Autowired
+    private WalletsRepository walletsRepository;
+
     final BotConfig config;
 
     static final String HELP_TEXT = "Когда-то тут что-то будет";
@@ -51,7 +61,7 @@ public class TelegramBot extends TelegramLongPollingBot {
     private boolean bCheckForAnswer;
     private String Currency;
 
-    private int CurrentPage=0;
+    private Pages CurrentPage;
 
     public TelegramBot(BotConfig config) {
         this.config = config;
@@ -74,7 +84,16 @@ public class TelegramBot extends TelegramLongPollingBot {
     private String profile = EmojiParser.parseToUnicode("Особистий кабінет"+":bust_in_silhouette:");
     private String becomeSeller = EmojiParser.parseToUnicode("Стати продавцем"+":moneybag:");
     private String back = EmojiParser.parseToUnicode("Назад"+":back:");
-    private String bot;
+    private String stopSelling = EmojiParser.parseToUnicode("Зупинити продаж"+":x:");
+
+    private String addMoney=EmojiParser.parseToUnicode("Поповнити баланс"+":inbox_tray:");
+    private String withdrawMoney =EmojiParser.parseToUnicode("Вивести гроші"+":outbox_tray:");
+    private String usdText = EmojiParser.parseToUnicode("USD"+":us:");
+    private String eurText = EmojiParser.parseToUnicode("EUR"+":eu:");
+    private String jpyText = EmojiParser.parseToUnicode("JPY"+":jp:");
+    private String uahText = EmojiParser.parseToUnicode("UAH"+":ua:");
+    private String calculator = EmojiParser.parseToUnicode("Валютний калькулятор"+":heavy_plus_sign:"+":heavy_minus_sign:");
+    private String graphs = EmojiParser.parseToUnicode("Отримати курс валюти"+":chart_with_upwards_trend:");
     @Override
     public String getBotToken() {
         return config.getToken();
@@ -88,13 +107,31 @@ public class TelegramBot extends TelegramLongPollingBot {
     public void onUpdateReceived(Update update) {
         if(bCheckForAnswer)
         {
-            if (update.hasMessage() && update.getMessage().hasText()){
+            if(update.hasMessage() && update.getMessage().hasText()){
                 String messageText = update.getMessage().getText();
                 long chatId = update.getMessage().getChatId();
-                CalculateCurrency(messageText,chatId);
+
+                if(CurrentPage== Pages.PROFILE_CURRENCY_TOP)
+                {
+                    AddMoney(Currency,messageText,chatId);
+                    bCheckForAnswer=false;
+                    return;
+                }
+                if(CurrentPage==Pages.CALCULATOR_CURRENCY)
+                {
+                    CalculateCurrency(Currency,messageText,chatId);
+                    bCheckForAnswer=false;
+                    return;
+                }
+                if(CurrentPage==Pages.PROFILE_CURRENCY_WITHDRAW)
+                {
+                    WithdrawMoney(Currency,messageText,chatId);
+                    bCheckForAnswer=false;
+                    return;
+                }
             }
-            return;
         }
+
         if (update.hasMessage() && update.getMessage().hasText()){
             String messageText = update.getMessage().getText();
             long chatId = update.getMessage().getChatId();
@@ -105,28 +142,93 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
             if(messageText.matches(profile))
             {
-                SendProfileInfo("",chatId);
+                SendProfileInfo(chatId);
                 return;
             }
             if(messageText.matches(becomeSeller))
             {
-                BecomeSeller("",chatId);
+                BecomeSeller(chatId);
+                return;
+            }
+            if(messageText.matches(stopSelling))
+            {
+                StopSelling(chatId);
+                return;
+            }
+            if(messageText.matches(addMoney))
+            {
+                CurrentPage=Pages.PROFILE_CURRENCY_TOP;
+                SendCurrencyOption("Яку валюту ви хочете поповнити?",chatId);
+                return;
+            }
+            if(messageText.matches(calculator))
+            {
+                CurrentPage=Pages.CALCULATOR_CURRENCY;
+                SendCurrencyOption("Яку валюту ви хочете порахувати?",chatId);
+                return;
+            }
+            if(messageText.matches(graphs))
+            {
+                CurrentPage=Pages.GRAPHS_CURRENCY;
+                SendCurrencyOption("Курс якої валюти бажаєте отримати?",chatId);
+                return;
+            }
+            if(messageText.matches(withdrawMoney))
+            {
+                CurrentPage=Pages.PROFILE_CURRENCY_WITHDRAW;
+                SendCurrencyOption("Яку валюту ви хочете зняти?",chatId);
                 return;
             }
             if(messageText.matches(back))
             {
                 switch (CurrentPage){
-                    case 2:
+                    case MARKETPLACE:
                         ShowStartOptions("Що ви бажаєте зробити?",chatId);
-                        CurrentPage=1;
+                        CurrentPage=Pages.MAIN;
                         break;
-                    case 3:
+                    case PROFILE:
                         ShowMarketplaceOptions("Що ви бажаєте зробити?",chatId);
-                        CurrentPage=2;
+                        CurrentPage=Pages.MARKETPLACE;
+                        break;
+                    case PROFILE_CURRENCY_TOP:
+                        SendProfileInfo(chatId);
+                        CurrentPage=Pages.PROFILE;
+                        break;
+                    case PROFILE_CURRENCY_WITHDRAW:
+                        SendProfileInfo(chatId);
+                        CurrentPage=Pages.PROFILE;
+                        break;
+                    case CALCULATOR_CURRENCY:
+                        ShowStartOptions("Що ви бажаєте зробити?",chatId);
+                        CurrentPage=Pages.MAIN;
+                        break;
+                    case GRAPHS_CURRENCY:
+                        ShowStartOptions("Що ви бажаєте зробити?",chatId);
+                        CurrentPage=Pages.MAIN;
                         break;
                     default:
                         break;
                 }
+                return;
+            }
+            if(messageText.matches(usdText))
+            {
+                SendConvertedData("USD",chatId,update);
+                return;
+            }
+            if(messageText.matches(eurText))
+            {
+                SendConvertedData("EUR",chatId,update);
+                return;
+            }
+            if(messageText.matches(jpyText))
+            {
+                SendConvertedData("JPY",chatId,update);
+                return;
+            }
+            if(messageText.matches(uahText))
+            {
+                SendConvertedData("UAH",chatId,update);
                 return;
             }
             switch (messageText) {
@@ -146,42 +248,6 @@ public class TelegramBot extends TelegramLongPollingBot {
                         e.printStackTrace();
                     }
                     sendMessage(chatId, exchangeRates);
-                    break;
-                case "/mydata":
-                    SendData(chatId);
-                    break;
-                case "Перейти на марктеплейс":
-                    ShowMarketplaceOptions("Що ви бажаєте зробити?",chatId);
-                    break;
-                case "Назад":
-                    ShowStartOptions("Що ви бажаєте зробити?",chatId);
-                    break;
-                case "Отримати курс валюти":
-                    ShowGraphOptions("Курс якої валюти ви бажаєте отримати?",chatId);
-                    break;
-                case "USD":
-                    /*try {
-                        ("USD",chatId);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }*/
-                    SendConvertedData("USD",chatId);
-                    break;
-                case "EUR":
-                    /*try {
-                        SendRateGraph("EUR",chatId);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }*/
-                    SendConvertedData("EUR",chatId);
-                    break;
-                case "JPY":
-                    /*try {
-                        SendRateGraph("JPY",chatId);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }*/
-                    SendConvertedData("JPY",chatId);
                     break;
                 default:sendMessage(chatId, "Вибачте, але я не знаю такої команди");
 
@@ -226,9 +292,15 @@ public class TelegramBot extends TelegramLongPollingBot {
             user.setFirstName(chat.getFirstName());
             user.setLastName(chat.getLastName());
             user.setRegisteredAt(new Timestamp(System.currentTimeMillis()));
-
             userRepository.save(user);
+        }
+        if(walletsRepository.findById(msg.getChatId()).isEmpty()){
 
+            var chatId = msg.getChatId();
+
+            Wallet wallet = new Wallet();
+            wallet.setId(chatId);
+            walletsRepository.save(wallet);
         }
     }
     private void sendMessage(long chatId, String textToSend){
@@ -296,7 +368,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         // Отправляем сообщение с кнопками пользователю
         try {
             execute(sendMessage);
-            CurrentPage=1;
+            CurrentPage=Pages.MAIN;
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
@@ -332,16 +404,19 @@ public class TelegramBot extends TelegramLongPollingBot {
         // Отправляем сообщение с кнопками пользователю
         try {
             execute(sendMessage);
-            CurrentPage=2;
+            CurrentPage=Pages.MARKETPLACE;
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
-    private void SendProfileInfo(String message, long chatId)
+    private void SendProfileInfo(long chatId)
     {
         Optional<User> user = userRepository.findById(chatId);
         User userUser = user.get();
-        String messageToSend = "Ваш профіль:\nІм'я:"+userUser.getFirstName()+"\nДата реєстрації:"+userUser.getRegisteredAt();
+
+        Optional<Wallet> walletOptional = walletsRepository.findById(chatId);
+        Wallet wallet = walletOptional.get();
+        String messageToSend = wallet.GetBalance();
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
         sendMessage.setText(messageToSend);
@@ -375,17 +450,62 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         try {
             execute(sendMessage);
-            CurrentPage=3;
+            CurrentPage=Pages.PROFILE;
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
-    private void BecomeSeller(String message, long chatId)
+    private void BecomeSeller(long chatId)
     {
         Optional<User> user = userRepository.findById(chatId);
         User userUser = user.get();
         String messageToSend = "Ви стали продавцем";
         userUser.setBIsSeller(true);
+        userRepository.save(userUser);
+        registerSeller(chatId);
+        SendMessage sendMessage = new SendMessage();
+        sendMessage.setChatId(chatId);
+        sendMessage.setText(messageToSend);
+
+        List<KeyboardRow> keyboard = new ArrayList<>();
+        KeyboardRow row1 = new KeyboardRow();
+        KeyboardRow row2 = new KeyboardRow();
+        KeyboardRow row3 = new KeyboardRow();
+        if(userUser.isBIsSeller())
+        {
+            row1.add(new KeyboardButton(EmojiParser.parseToUnicode("Зупинити продаж"+":x:")));
+        }
+        else
+        {
+            row1.add(new KeyboardButton(EmojiParser.parseToUnicode("Стати продавцем"+":moneybag:")));
+        }
+        row2.add(new KeyboardButton(EmojiParser.parseToUnicode("Поповнити баланс"+":inbox_tray:")));
+        row2.add(new KeyboardButton(EmojiParser.parseToUnicode("Вивести гроші"+":outbox_tray:")));
+        row3.add(new KeyboardButton(EmojiParser.parseToUnicode("Назад"+":back:")));
+        keyboard.add(row1);
+        keyboard.add(row2);
+        keyboard.add(row3);
+
+        ReplyKeyboardMarkup markup = new ReplyKeyboardMarkup();
+        markup.setKeyboard(keyboard);
+        markup.setResizeKeyboard(true);
+        markup.setOneTimeKeyboard(true);
+        markup.setSelective(true);
+        sendMessage.setReplyMarkup(markup);
+
+        try {
+            execute(sendMessage);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+    private void StopSelling(long chatId)
+    {
+        Optional<User> user = userRepository.findById(chatId);
+        User userUser = user.get();
+        String messageToSend = "Ви припинили продаж";
+        userUser.setBIsSeller(false);
+        removeSeller(chatId);
         userRepository.save(userUser);
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
@@ -419,12 +539,12 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         try {
             execute(sendMessage);
-            CurrentPage=3;
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
-    private void ShowGraphOptions(String message, long chatId)
+
+    private void SendCurrencyOption(String message, long chatId)
     {
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
@@ -432,15 +552,25 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         // Создаем список кнопок и добавляем их в разметку
         List<KeyboardRow> keyboard = new ArrayList<>();
+
+        KeyboardRow row0 = new KeyboardRow();
         KeyboardRow row1 = new KeyboardRow();
         KeyboardRow row2 = new KeyboardRow();
         KeyboardRow row3 = new KeyboardRow();
+        KeyboardRow row4 = new KeyboardRow();
+        if(CurrentPage==Pages.PROFILE_CURRENCY_TOP ||CurrentPage==Pages.PROFILE_CURRENCY_WITHDRAW )
+        {
+            row0.add(new KeyboardButton(EmojiParser.parseToUnicode("UAH"+":ua:")));
+        }
         row1.add(new KeyboardButton(EmojiParser.parseToUnicode("USD"+":us:")));
         row2.add(new KeyboardButton(EmojiParser.parseToUnicode("EUR"+":eu:")));
         row3.add(new KeyboardButton(EmojiParser.parseToUnicode("JPY"+":jp:")));
+        row4.add(new KeyboardButton(EmojiParser.parseToUnicode("Назад"+":back:")));
+        keyboard.add(row0);
         keyboard.add(row1);
         keyboard.add(row2);
         keyboard.add(row3);
+        keyboard.add(row4);
 
         // Устанавливаем разметку в сообщении
         ReplyKeyboardMarkup markup = new ReplyKeyboardMarkup();
@@ -457,12 +587,40 @@ public class TelegramBot extends TelegramLongPollingBot {
             e.printStackTrace();
         }
     }
-    private void SendRateGraph(String message, long chatId) throws IOException {
+    private void WithdrawMoney(String currency,String amount, long chatId)
+    {
+        Optional<Wallet> walletOptional = walletsRepository.findById(chatId);
+        Wallet wallet = walletOptional.get();
+        double value = Double.parseDouble(amount);
+        String result = wallet.WithdrawMoney(currency,value);
+        walletsRepository.save(wallet);
+        SendMessage sendMessage = new SendMessage();
+        sendMessage.setChatId(chatId);
+        sendMessage.setText(result);
+        try {
+            execute(sendMessage);
+            SendProfileInfo(chatId);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+    private void AddMoney(String currency,String amount, long chatId)
+    {
+        Optional<Wallet> walletOptional = walletsRepository.findById(chatId);
+        Wallet wallet = walletOptional.get();
+        double value = Double.parseDouble(amount);
+        wallet.AddMoney(currency,value);
+        walletsRepository.save(wallet);
+
+        SendProfileInfo(chatId);
+    }
+    private void SendRateGraph(String currency, long chatId) throws IOException {
         ChartCreator chartCreator = new ChartCreator();
-        chartCreator.GenerateChart(message);
+        chartCreator.GenerateChart(currency);
         SendPhoto sendPhoto = new SendPhoto();
         sendPhoto.setChatId(chatId);
-
+        bCheckForAnswer=false;
+        Currency=null;
         // Указываем файл изображения
         File image = new File("chart.png");
         InputFile inputFile = new InputFile(image);
@@ -474,25 +632,38 @@ public class TelegramBot extends TelegramLongPollingBot {
             e.printStackTrace();
         }
     }
-    private void SendConvertedData(String message, long chatId)
+    private void SendConvertedData(String message, long chatId,Update update)
     {
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
-        sendMessage.setText("Введите кол-во вашей валюты:");
-        bCheckForAnswer = true;
+        switch (CurrentPage){
+            case PROFILE_CURRENCY_TOP -> sendMessage.setText("Яку кількість ви хочете поповнити?");
+            case PROFILE_CURRENCY_WITHDRAW -> sendMessage.setText("Яку кількість ви хочете зняти?");
+            case CALCULATOR_CURRENCY -> sendMessage.setText("Яку кількість ви хочете обрахувати?");
+        }
         Currency=message;
+        if(CurrentPage!=Pages.GRAPHS_CURRENCY){
+            bCheckForAnswer = true;
+        }
+        else
+        {
+            try {
+                SendRateGraph(Currency,chatId);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
         try {
             execute(sendMessage);
         } catch (Exception e) {
             e.printStackTrace();
         }
-
     }
-    private void CalculateCurrency(String userMessage,long chatId ){
+    private void CalculateCurrency(String currency,String userMessage,long chatId ){
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
-        String answer = CurrencyCalculator.convertCurrency(Double.parseDouble(userMessage),Currency);
-        sendMessage.setText("Кол-во в "+Currency+": "+answer);
+        String answer = CurrencyCalculator.convertCurrency(Double.parseDouble(userMessage),currency);
+        sendMessage.setText("Кол-во в "+currency+": "+answer);
         bCheckForAnswer=false;
         Currency=null;
         try {
@@ -501,20 +672,21 @@ public class TelegramBot extends TelegramLongPollingBot {
             e.printStackTrace();
         }
     }
-    void SellCurrency(Message msg)
+    private void registerSeller(long chatId)
     {
-
-        if(sellersRepository.findById(msg.getChatId()).isEmpty()){
-
-            var chatId = msg.getChatId();
-            var chat = msg.getChat();
-
+        if(sellersRepository.findById(chatId).isEmpty()){
             Sellers seller = new Sellers();
             seller.setChatId(chatId);
-
             sellersRepository.save(seller);
-
-
         }
     }
+    private void removeSeller(long chatId)
+    {
+        Optional<Sellers> optionalSeller = sellersRepository.findById(chatId);
+        if (optionalSeller.isPresent()) {
+            Sellers seller = optionalSeller.get();
+            sellersRepository.delete(seller);
+        }
+    }
+
 }

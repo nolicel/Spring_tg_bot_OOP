@@ -17,7 +17,7 @@ public class Sellers
     @Id
     private Long chatId;
 
-    private double rate;
-
-    private String currency;
+    private double usdRate;
+    private double eurRate;
+    private double jpyRate;
 }
