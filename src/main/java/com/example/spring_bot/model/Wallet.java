@@ -48,7 +48,7 @@ public class Wallet {
                 break;
         }
     }
-    public String WithdrawMoney(String currency, double value)
+    public boolean WithdrawMoney(String currency, double value)
     {
         CurrencyCodes currencyCode = CurrencyCodes.valueOf(currency);
         int index = currencyCode.ordinal();
@@ -58,40 +58,40 @@ public class Wallet {
                 if(value<=uahBalance)
                 {
                     uahBalance -= value;
-                    return "Гроші успішно знято";
+                    return true;
                 }
                 else {
-                    return "Недостатньо грошей на рахунку";
+                    return false;
                 }
             case 1:
                 if(value<=usdBalance)
                 {
                     usdBalance -= value;
-                    return "Гроші успішно знято";
+                    return true;
                 }
                 else {
-                    return "Недостатньо грошей на рахунку";
+                    return false;
                 }
             case 2:
                 if(value<=eurBalance)
                 {
                     eurBalance -= value;
-                    return "Гроші успішно знято";
+                    return true;
                 }
                 else {
-                    return "Недостатньо грошей на рахунку";
+                    return false;
                 }
             case 3:
                 if(value<=jpyBalance)
                 {
                     jpyBalance -= value;
-                    return "Гроші успішно знято";
+                    return true;
                 }
                 else {
-                    return "Недостатньо грошей на рахунку";
+                    return false;
                 }
             default:
-                return "Невідомий код валюти";
+                return false;
         }
     }
 
