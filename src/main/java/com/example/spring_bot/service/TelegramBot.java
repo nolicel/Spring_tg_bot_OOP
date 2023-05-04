@@ -4,10 +4,8 @@ import com.example.spring_bot.config.BotConfig;
 import com.example.spring_bot.model.*;
 import com.vdurmont.emoji.EmojiParser;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendLocation;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -79,7 +77,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             this.execute(new SetMyCommands(listofCommands,new BotCommandScopeDefault(), null));
         }
         catch (TelegramApiException e){
-            System.out.println("Pizda");
+            System.out.println("Constructor exception");
         }
     }
 
@@ -252,6 +250,11 @@ public class TelegramBot extends TelegramLongPollingBot {
                         ShowStartOptions("Що ви бажаєте зробити?",chatId);
                         CurrentPage=Pages.MAIN;
                         break;
+                    case BUY_CURRENCY:
+                        ShowMarketplaceOptions("Що ви бажаєте зробити?",chatId);
+                        bCheckForAnswer=false;
+                        CurrentPage=Pages.MARKETPLACE;
+                        break;
                     default:
                         break;
                 }
@@ -358,9 +361,8 @@ public class TelegramBot extends TelegramLongPollingBot {
             execute(message);
         }
         catch (TelegramApiException e){
-            System.out.println("Pizda");
+            System.out.println("Send Message exception");
         }
-
 
     }
 

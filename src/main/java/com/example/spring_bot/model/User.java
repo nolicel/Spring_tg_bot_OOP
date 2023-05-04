@@ -1,13 +1,9 @@
 package com.example.spring_bot.model;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import lombok.Getter;
 import lombok.Setter;
-
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.HashMap;
 
 @Getter
 @Setter
